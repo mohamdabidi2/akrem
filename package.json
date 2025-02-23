@@ -15,7 +15,8 @@
         "jsonwebtoken": "^9.0.0",
         "mongodb": "^6.13.0",
         "mongoose": "^7.0.0",
-        "nodemon": "^2.0.22"
+        "nodemon": "^2.0.22",
+        "socket.io": "^4.8.1"
     },
     "engines": {
         "node": ">=16.0.0"
