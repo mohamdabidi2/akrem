@@ -98,10 +98,12 @@ exports.deleteMenu = async (req, res) => {
 };
 exports.getTodayMenu = async (req, res) => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // Get today's date in "YYYY-MM-DD" format
-  console.log(today)
+        
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1); // Add one day
+        const tomorrowDate = tomorrow.toISOString().split('T')[0];
       // Find the menu for today
-      const menu = await Menu.findOne({ date: today });
+      const menu = await Menu.findOne({ date: tomorrowDate });
   
       if (!menu) {
         return res.status(404).json({ error: "Menu du jour introuvable" }); // Menu not found
