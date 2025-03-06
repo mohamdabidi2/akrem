@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const authRoutes = require('./routes/authRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
 const errorHandler = require('./middleware/errorHandler');
+const userRoutes=require('./routes/userRoute')
 
 // Initialize the app
 const app = express();
@@ -20,6 +21,7 @@ app.use(cors()); // Enable Cross-Origin Resource Sharing
 // Routes
 app.use('/api/auth', authRoutes); // Authentication routes (register, login, profile)
 app.use('/api/tickets', ticketRoutes); // Ticket management routes (create, validate, recharge, etc.)
+app.use('/api/users', userRoutes); // user management routes 
 
 // Error handling middleware
 app.use(errorHandler); // Catch errors and send a structured response
