@@ -96,3 +96,20 @@ exports.deleteMenu = async (req, res) => {
     res.status(500).json({ error: "Erreur serveur" });
   }
 };
+exports.getTodayMenu = async (req, res) => {
+    try {
+      const today = new Date().toISOString().split('T')[0]; // Get today's date in "YYYY-MM-DD" format
+  
+      // Find the menu for today
+      const menu = await Menu.findOne({ date: today });
+  
+      if (!menu) {
+        return res.status(404).json({ error: "Menu du jour introuvable" }); // Menu not found
+      }
+  
+      // Respond with the menu (can include dishes or other data)
+      res.json([menu]); // Wrap in an array to match the expected format in the Flutter app
+    } catch (err) {
+      res.status(500).json({ error: "Erreur serveur" }); // Server error
+    }
+  };
