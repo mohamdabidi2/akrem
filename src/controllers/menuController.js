@@ -100,7 +100,7 @@ exports.getTodayMenu = async (req, res) => {
     try {
         
         const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1); // Add one day
+
         const tomorrowDate = tomorrow.toISOString().split('T')[0];
       // Find the menu for today
       const menu = await Menu.findOne({ date: tomorrowDate });
