@@ -11,7 +11,7 @@ const attachIo = (handler) => (req, res) => handler(req, res, req.io);
 router.post('/create', authMiddleware, attachIo(ticketController.createTicket));
 
 // Route to get all available tickets for a specific user (protected route)
-router.get('/user/:userId', authMiddleware, ticketController.getUserTickets);
+router.get('/user/:userId', ticketController.getUserTickets);
 
 // Route to validate a ticket (for restaurateurs) (protected route)
 router.post('/validate', authMiddleware, attachIo(ticketController.validateTicket));
