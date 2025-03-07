@@ -48,7 +48,7 @@ exports.getUserTickets = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        const tickets = await Ticket.find({ userId, status: 'available' });
+        const tickets = await Ticket.find({ userId});
 
         if (!tickets.length) {
             return res.status(404).json({ message: 'No available tickets found' });
