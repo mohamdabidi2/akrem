@@ -78,9 +78,9 @@ console.log(imageUrl)
 
 // 📌 Modifier un plat
 exports.editDish = asyncHandler(async (req, res) => {
-  const { date, oldDishName, newDish } = req.body;
-console.log(date, oldDishName, newDish )
-  if (!date || !oldDishName || !newDish) {
+  const { date, dish, newDish } = req.body;
+console.log(date, dish, newDish )
+  if (!date || !dish || !newDish) {
     return res.status(400).json({ error: "Données incomplètes" });
   }
 
@@ -89,7 +89,7 @@ console.log(date, oldDishName, newDish )
     return res.status(404).json({ error: "Menu introuvable" });
   }
 
-  const dishIndex = menu.dishes.findIndex((d) => d.name === oldDishName);
+  const dishIndex = menu.dishes.findIndex((d) => d.name === dish);
   if (dishIndex === -1) {
     return res.status(404).json({ error: "Plat introuvable" });
   }
@@ -102,9 +102,9 @@ console.log(date, oldDishName, newDish )
 
 // 📌 Supprimer un plat d'un menu
 exports.deleteDish = asyncHandler(async (req, res) => {
-  const { date, dishName } = req.body;
-  console.log(date, dishName )
-  if (!date || !dishName) {
+  const { date, dish } = req.body;
+  console.log(date, dish )
+  if (!date || !dish) {
     console.log("Date et nom du plat requis")
     return res.status(400).json({ error: "Date et nom du plat requis" });
   }
@@ -116,7 +116,7 @@ exports.deleteDish = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "Menu introuvable" });
   }
 
-  const updatedDishes = menu.dishes.filter((d) => d.name !== dishName);
+  const updatedDishes = menu.dishes.filter((d) => d.name !== dish);
   if (updatedDishes.length === menu.dishes.length) {
     console.log("Plat non trouvé")
 
