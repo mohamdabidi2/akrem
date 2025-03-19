@@ -45,23 +45,31 @@ const uploadImageToFilestack = async (imageBuffer, imageMimeType) => {
 exports.addDish = asyncHandler(async (req, res) => {
   const { date, dish } = req.body;
   const image = req.file;
+  console.log(image,date,dish)
 
   if (!date || !dish || !dish.name || !image) {
+    console.log("Date, plat et image requis")
     return res.status(400).json({ error: "Date, plat et image requis" });
+  
+
   }
 
   const menu = await Menu.findOne({ date });
   if (!menu) {
+    console.log("Menu introuvable")
     return res.status(404).json({ error: "Menu introuvable" });
+ 
+
   }
 
   const dishExists = menu.dishes.some((d) => d.name === dish.name);
   if (dishExists) {
+    console.log("Ce plat est déjà dans le menu")
     return res.status(400).json({ error: "Ce plat est déjà dans le menu" });
   }
 
   const imageUrl = await uploadImageToFilestack(image.buffer, image.mimetype);
-
+console.log(imageUrl)
   menu.dishes.push({ name: dish.name, imageUrl });
   await menu.save();
 
