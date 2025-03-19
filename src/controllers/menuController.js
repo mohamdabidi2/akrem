@@ -79,7 +79,7 @@ console.log(imageUrl)
 // 📌 Modifier un plat
 exports.editDish = asyncHandler(async (req, res) => {
   const { date, oldDishName, newDish } = req.body;
-
+console.log(date, oldDishName, newDish )
   if (!date || !oldDishName || !newDish) {
     return res.status(400).json({ error: "Données incomplètes" });
   }
