@@ -105,21 +105,27 @@ exports.deleteDish = asyncHandler(async (req, res) => {
   const { date, dishName } = req.body;
 
   if (!date || !dishName) {
+    console.log("Date et nom du plat requis")
     return res.status(400).json({ error: "Date et nom du plat requis" });
   }
 
   const menu = await Menu.findOne({ date });
   if (!menu) {
+    console.log("Menu introuvable")
+
     return res.status(404).json({ error: "Menu introuvable" });
   }
 
   const updatedDishes = menu.dishes.filter((d) => d.name !== dishName);
   if (updatedDishes.length === menu.dishes.length) {
+    console.log("Plat non trouvé")
+
     return res.status(404).json({ error: "Plat non trouvé" });
   }
 
   menu.dishes = updatedDishes;
   await menu.save();
+  console.log("Plat supprimé avec succès")
 
   res.json({ message: "Plat supprimé avec succès", menu });
 });
