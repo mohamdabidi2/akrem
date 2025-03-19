@@ -10,15 +10,24 @@ exports.createTicket = async (req, res, io) => {
             return res.status(400).json({ message: 'User ID and amount are required' });
         }
 
-        for (let i = 0; i < amount; i++) {
-            function generateBarcode(length = 12) {
-                let barcode = "";
-                for (let i = 0; i < length; i++) {
-                    barcode += Math.floor(Math.random() * 10); // Generate random digit (0-9)
-                }
-                return barcode;
-            }
+        // Compter le nombre actuel de tickets de l'utilisateur
+        const userTicketCount = await Ticket.countDocuments({ userId });
 
+        // Vérifier si l'utilisateur dépasse la limite de 10 tickets
+        if (userTicketCount + amount > 10) {
+            return res.status(400).json({ message: 'Maximum 10 tickets allowed per user' });
+        }
+
+        function generateBarcode(length = 12) {
+            let barcode = "";
+            for (let i = 0; i < length; i++) {
+                barcode += Math.floor(Math.random() * 10); // Generate random digit (0-9)
+            }
+            return barcode;
+        }
+
+        // Création des tickets
+        for (let i = 0; i < amount; i++) {
             const ticket = new Ticket({
                 userId,
                 barcode: generateBarcode(),
@@ -29,7 +38,7 @@ exports.createTicket = async (req, res, io) => {
             await ticket.save();
         }
 
-        // Emit a real-time notification to the specific user
+        // Émettre une notification en temps réel à l'utilisateur
         io.emit("newNotification", {
             userId,
             message: `You have successfully recharged ${amount} ticket(s)! 🎉`,
@@ -42,6 +51,7 @@ exports.createTicket = async (req, res, io) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+
 
 // Get all available tickets for a user
 exports.getUserTickets = async (req, res) => {
