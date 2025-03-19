@@ -47,7 +47,7 @@ exports.addDish = asyncHandler(async (req, res) => {
   const image = req.file;
   console.log(image,date,dish)
 
-  if (!date || !dish || !dish.name || !image) {
+  if (!date || !dish || !dish || !image) {
     console.log("Date, plat et image requis")
     return res.status(400).json({ error: "Date, plat et image requis" });
   
@@ -70,7 +70,7 @@ exports.addDish = asyncHandler(async (req, res) => {
 
   const imageUrl = await uploadImageToFilestack(image.buffer, image.mimetype);
 console.log(imageUrl)
-  menu.dishes.push({ name: dish.name, imageUrl });
+  menu.dishes.push({ name: dish, imageUrl });
   await menu.save();
 
   res.status(200).json({ message: "Plat ajouté avec succès", menu });
