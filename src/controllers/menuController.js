@@ -103,7 +103,7 @@ console.log(date, oldDishName, newDish )
 // 📌 Supprimer un plat d'un menu
 exports.deleteDish = asyncHandler(async (req, res) => {
   const { date, dishName } = req.body;
-
+  console.log(date, oldDishName, newDish )
   if (!date || !dishName) {
     console.log("Date et nom du plat requis")
     return res.status(400).json({ error: "Date et nom du plat requis" });
