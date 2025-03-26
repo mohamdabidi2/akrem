@@ -107,3 +107,78 @@ exports.validateTicket = async (req, res, io) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+exports.verifyTicket = async (req, res, io) => {
+    console.log("working")
+    try {
+        const { userId } = req.params;
+
+        // Validate user ID
+        if (!userId) {
+            return res.status(400).json({
+                access: false,
+                message: "User ID is required"
+            });
+        }
+
+        // Find the oldest available ticket (FIFO approach)
+        const ticket = await Ticket.findOne({
+            userId,
+            status: 'available'
+        }).sort({ createdAt: 1 }); // Get oldest ticket first
+
+        if (!ticket) {
+            return res.status(404).json({
+                access: false,
+                message: "No available tickets found for this user"
+            });
+        }
+
+        // Check for ticket expiration (24-hour validity)
+        const now = new Date();
+        const ticketAgeHours = (now - ticket.createdAt) / (1000 * 60 * 60);
+
+        if (ticketAgeHours > 24) {
+            ticket.status = 'expired';
+            await ticket.save();
+
+            io.emit("newNotification", {
+                userId,
+                message: `Ticket ${ticket.barcode} expired without use`,
+                timestamp: now
+            });
+
+            return res.status(400).json({
+                access: false,
+                message: "Ticket has expired"
+            });
+        }
+
+        // Mark ticket as used
+        ticket.status = 'used';
+        ticket.updatedAt = now;
+        await ticket.save();
+
+        // Send real-time notification
+        io.emit("newNotification", {
+            userId,
+            message: `Ticket ${ticket.barcode} used for access`,
+            timestamp: now
+        });
+
+        return res.status(200).json({
+            access: true,
+            message: "Access granted",
+            ticket: {
+                barcode: ticket.barcode,
+                createdAt: ticket.createdAt
+            }
+        });
+
+    } catch (err) {
+        console.error('Ticket verification error:', err);
+        return res.status(500).json({
+            access: false,
+            message: "Internal server error during ticket verification"
+        });
+    }
+};
