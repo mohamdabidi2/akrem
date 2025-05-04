@@ -15,6 +15,6 @@ router.get('/user/:userId', ticketController.getUserTickets);
 
 // Route to validate a ticket (for restaurateurs) (protected route)
 router.post('/validate', authMiddleware, attachIo(ticketController.validateTicket));
-router.get('/verify/:userId', ticketController.verifyTicket);
+router.post('/verify', ticketController.verifyTicket);
 
 module.exports = router;
