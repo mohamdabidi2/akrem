@@ -8,7 +8,7 @@ const router = express.Router();
 const attachIo = (handler) => (req, res) => handler(req, res, req.io);
 
 // Route to create a new ticket (protected route)
-router.post('/create', authMiddleware, attachIo(ticketController.createTicket));
+router.post('/create', attachIo(ticketController.createTicket));
 
 // Route to get all available tickets for a specific user (protected route)
 router.get('/user/:userId', ticketController.getUserTickets);
