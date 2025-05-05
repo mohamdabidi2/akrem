@@ -1,4 +1,4 @@
-// Corrected ticketController.js (v3 - using ZBar WASM)
+// Corrected ticketController.js (v6 - No Socket.IO)
 const multer = require("multer");
 const axios = require("axios");
 const FormData = require("form-data");
@@ -13,7 +13,7 @@ const { createCanvas, loadImage } = require("canvas"); // Requires "canvas" pack
 const { scanImageData } = require("@undecaf/zbar-wasm"); // Requires "@undecaf/zbar-wasm" package installation
 
 // Create a new ticket
-exports.createTicket = async (req, res, io) => {
+exports.createTicket = async (req, res) => {
     try {
         const { userId, amount } = req.body;
 
@@ -70,17 +70,7 @@ exports.createTicket = async (req, res, io) => {
             createdTickets.push(ticket); // Optional: collect created tickets if needed later
         }
 
-        // Émettre une notification en temps réel à l"utilisateur
-        if (io) { // Check if io object is provided
-             io.emit("newNotification", {
-                 userId,
-                 message: `You have successfully recharged ${numAmount} ticket(s)! 🎉`,
-                 timestamp: new Date(),
-             });
-        } else {
-            debug("Socket.io object (io) not provided to createTicket");
-        }
-
+        // Socket.IO notification removed
 
         res.status(201).json({ message: "Tickets created successfully", count: numAmount });
     } catch (err) {
@@ -102,11 +92,6 @@ exports.getUserTickets = async (req, res) => {
         // Find tickets, optionally filter by status if needed (e.g., only "available")
         const tickets = await Ticket.find({ userId: userId /*, status: "available" */ }); // Find by userId
 
-        // It"s okay if a user has no tickets, return empty array instead of 404
-        // if (!tickets.length) {
-        //     return res.status(404).json({ message: "No available tickets found for this user" });
-        // }
-
         res.status(200).json(tickets);
     } catch (err) {
         console.error("Error getting user tickets:", err);
@@ -115,7 +100,7 @@ exports.getUserTickets = async (req, res) => {
 };
 
 // Validate a ticket (for restaurateurs) - by barcode string
-exports.validateTicket = async (req, res, io) => {
+exports.validateTicket = async (req, res) => {
     try {
         const { barcode } = req.body; // Barcode string to validate the ticket
 
@@ -140,17 +125,7 @@ exports.validateTicket = async (req, res, io) => {
         ticket.validatedAt = new Date(); // Add validation timestamp
         await ticket.save();
 
-        // Emit a real-time notification to the specific user
-        if (io) { // Check if io object is provided
-            // Consider emitting to a specific user room if applicable: io.to(ticket.userId).emit(...)
-            io.emit("newNotification", { // Or emit to a specific user/room
-                userId: ticket.userId,
-                message: `Your ticket with barcode ${barcode} has been validated successfully! ✅`,
-                timestamp: new Date(),
-            });
-         } else {
-            debug("Socket.io object (io) not provided to validateTicket");
-         }
+        // Socket.IO notification removed
 
         res.status(200).json({ message: "Ticket validated successfully", ticket });
     } catch (err) {
@@ -218,16 +193,16 @@ async function estimateSharpness(imageBuffer) {
 }
 
 
-// Verify ticket via barcode image upload (Using ZBar WASM)
+// Verify ticket via barcode image upload (Using ZBar WASM + UserID Lookup - No Socket.IO)
 exports.verifyTicket = [
   upload.single("barcodeImage"), // Middleware for handling single file upload named "barcodeImage"
-  async (req, res, io) => {
+  async (req, res) => {
     const debugInfo = { // Collect debug info throughout the process
         receivedFile: !!req.file,
         fileDetails: req.file ? { name: req.file.originalname, size: req.file.size, type: req.file.mimetype } : null,
         decodeAttempts: [],
         imageAnalysis: null,
-        finalUserId: null,
+        decodedUserId: null, // Changed from finalUserId
         ticketStatus: null,
         error: null
     };
@@ -268,7 +243,7 @@ exports.verifyTicket = [
       }
 
       // 3. Multiple decoding attempts
-      let userId = null; // Will store the decoded barcode text (assuming it"s the userId)
+      let decodedUserId = null; // Store the decoded user ID
       let decodedSymbols = []; // Store results from ZBar
 
       // Attempt 1: Local ZBar Decoder using @undecaf/zbar-wasm
@@ -286,15 +261,14 @@ exports.verifyTicket = [
         decodedSymbols = await scanImageData(imageData);
 
         if (decodedSymbols.length > 0) {
-            // Assuming the first detected barcode is the one we want
-            // The actual data is in rawData after decoding
+            // Assuming the first detected barcode contains the User ID
             const firstSymbol = decodedSymbols[0];
-            userId = firstSymbol.decode("utf-8"); // Decode raw data as UTF-8 string
-            debugInfo.finalUserId = userId;
+            decodedUserId = firstSymbol.decode("utf-8"); // Decode raw data as UTF-8 string
+            debugInfo.decodedUserId = decodedUserId;
             debugInfo.decodeAttempts.push({
                 method: "Local ZBar WASM",
                 success: true,
-                result: userId,
+                result: decodedUserId,
                 details: decodedSymbols.map(s => ({ type: s.typeName, data: s.decode("utf-8") }))
             });
         } else {
@@ -318,7 +292,7 @@ exports.verifyTicket = [
       }
 
       // Attempt 2: ZXing Web API (Fallback if ZBar failed)
-      if (!userId) {
+      if (!decodedUserId) {
           try {
             const formData = new FormData();
             formData.append("file", processedImageBuffer, {
@@ -359,8 +333,8 @@ exports.verifyTicket = [
             });
 
             if (parsedText) {
-                userId = parsedText;
-                debugInfo.finalUserId = userId;
+                decodedUserId = parsedText;
+                debugInfo.decodedUserId = decodedUserId;
             }
           } catch (zxingError) {
             debugInfo.decodeAttempts.push({
@@ -373,7 +347,7 @@ exports.verifyTicket = [
       }
 
       // 4. Analyze Image if decoding failed after all attempts
-      if (!userId) {
+      if (!decodedUserId) {
         try {
           const metadata = await sharp(processedImageBuffer).metadata();
           // Call corrected helper function
@@ -404,30 +378,21 @@ exports.verifyTicket = [
         });
       }
 
-      // 5. Barcode Found - Now Validate the Ticket using the decoded barcode (userId)
-      const ticket = await Ticket.findOne({ barcode: userId }); // Assuming decoded text is the barcode
+      // 5. User ID Found - Now Find and Validate an AVAILABLE Ticket for this User
+      const ticket = await Ticket.findOne({ userId: decodedUserId, status: "available" });
 
       if (!ticket) {
-          debugInfo.error = `Ticket not found for decoded barcode: ${userId}`;
-          debugInfo.ticketStatus = "Not Found";
+          // Changed error message and debug info
+          debugInfo.error = `No available ticket found for user ID: ${decodedUserId}`;
+          debugInfo.ticketStatus = "No Available Ticket Found";
           return res.status(404).json({
               access: false,
-              message: "Decoded barcode does not correspond to a valid ticket",
+              message: "No available ticket found for the scanned user ID",
               debug: debugInfo
           });
       }
 
-      debugInfo.ticketStatus = ticket.status;
-
-      if (ticket.status !== "available") {
-          const message = ticket.status === "used" ? "Ticket has already been used" : `Ticket is not available (status: ${ticket.status})`;
-          debugInfo.error = message;
-          return res.status(400).json({
-              access: false,
-              message: message,
-              debug: debugInfo
-          });
-      }
+      debugInfo.ticketStatus = ticket.status; // Should be "available"
 
       // 6. Ticket is valid and available - Mark as used
       ticket.status = "used";
@@ -435,16 +400,7 @@ exports.verifyTicket = [
       await ticket.save();
       debugInfo.ticketStatus = "Used"; // Update status after saving
 
-      // Emit real-time notification
-      if (io) {
-          io.emit("newNotification", { // Or emit to specific user/room
-              userId: ticket.userId, // Notify the original owner
-              message: `Your ticket (Barcode: ${userId}) has been validated successfully via image upload! ✅`,
-              timestamp: new Date(),
-          });
-      } else {
-           debug("Socket.io object (io) not provided to verifyTicket");
-      }
+      // Socket.IO notification removed
 
       // 7. Success Response
       return res.status(200).json({
@@ -452,7 +408,7 @@ exports.verifyTicket = [
           message: "Ticket validated successfully via image upload",
           ticket: { // Return relevant ticket info
               userId: ticket.userId,
-              barcode: ticket.barcode,
+              barcode: ticket.barcode, // The specific barcode of the ticket that was used
               status: ticket.status,
               validatedAt: ticket.validatedAt
           },
