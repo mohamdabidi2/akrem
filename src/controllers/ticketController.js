@@ -3,6 +3,7 @@ const multer = require("multer");
 const axios = require("axios");
 const FormData = require("form-data");
 const Ticket = require("../models/Ticket"); // Assuming this path is correct relative to where this controller is used
+const User = require("../models/User"); // Assuming this path is correct relative to where this controller is used
 const debug = require("debug")("app:ticket");
 const sharp = require("sharp");
 
@@ -193,248 +194,84 @@ async function estimateSharpness(imageBuffer) {
 }
 
 
-// Verify ticket via barcode image upload (Using ZBar WASM + UserID Lookup - No Socket.IO)
-exports.verifyTicket = [
-  upload.single("barcodeImage"), // Middleware for handling single file upload named "barcodeImage"
-  async (req, res) => {
-    const debugInfo = { // Collect debug info throughout the process
-        receivedFile: !!req.file,
-        fileDetails: req.file ? { name: req.file.originalname, size: req.file.size, type: req.file.mimetype } : null,
-        decodeAttempts: [],
-        imageAnalysis: null,
-        decodedUserId: null, // Changed from finalUserId
+// Verify ticket via UID (replaces image-based verification)
+exports.verifyTicket = async (req, res) => {
+    const debugInfo = {
+        receivedUid: null,
+        decodedUserId: null,
         ticketStatus: null,
         error: null
     };
 
     try {
-      // 1. Validate file presence
-      if (!req.file?.buffer) {
-        debugInfo.error = "No image buffer received";
-        return res.status(400).json({
-          access: false,
-          message: "Valid barcode image is required",
-          debug: debugInfo
-        });
-      }
-      debugInfo.imageAnalysis = { originalSize: req.file.size };
+        const { uid } = req.body;
 
-
-      // 2. Image preprocessing with Sharp
-      let processedImageBuffer;
-      try {
-        processedImageBuffer = await sharp(req.file.buffer)
-          // .resize(800) // Optional: Resize for consistency, might affect small barcodes
-          .ensureAlpha() // Ensure alpha channel exists before flattening
-          .flatten({ background: { r: 255, g: 255, b: 255 } }) // Flatten transparency with white background
-          .normalise() // Enhance contrast
-          // .sharpen() // Optional: Sharpening might help or hinder
-          .linear(1.1) // Adjust brightness/contrast
-          .toBuffer();
-        debugInfo.imageAnalysis.processedSize = processedImageBuffer.length;
-      } catch (processError) {
-         debugInfo.error = `Image processing failed: ${processError.message}`;
-         console.error("Image processing error:", processError);
-         return res.status(400).json({
-           access: false,
-           message: "Image processing failed",
-           debug: debugInfo
-         });
-      }
-
-      // 3. Multiple decoding attempts
-      let decodedUserId = null; // Store the decoded user ID
-      let decodedSymbols = []; // Store results from ZBar
-
-      // Attempt 1: Local ZBar Decoder using @undecaf/zbar-wasm
-      try {
-        // Load image buffer with node-canvas
-        const image = await loadImage(processedImageBuffer);
-        const canvas = createCanvas(image.width, image.height);
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(image, 0, 0, image.width, image.height);
-        // Get ImageData from the canvas
-        const imageData = ctx.getImageData(0, 0, image.width, image.height);
-
-        // Scan image data using ZBar WASM
-        // This returns an array of detected symbols
-        decodedSymbols = await scanImageData(imageData);
-
-        if (decodedSymbols.length > 0) {
-            // Assuming the first detected barcode contains the User ID
-            const firstSymbol = decodedSymbols[0];
-            decodedUserId = firstSymbol.decode("utf-8"); // Decode raw data as UTF-8 string
-            debugInfo.decodedUserId = decodedUserId;
-            debugInfo.decodeAttempts.push({
-                method: "Local ZBar WASM",
-                success: true,
-                result: decodedUserId,
-                details: decodedSymbols.map(s => ({ type: s.typeName, data: s.decode("utf-8") }))
+        // 1. Validate UID presence
+        if (!uid) {
+            debugInfo.error = "No UID received";
+            return res.status(400).json({
+                access: false,
+                message: "User UID is required",
+                debug: debugInfo
             });
-        } else {
-            // No barcode found by ZBar
-            debugInfo.decodeAttempts.push({
-                method: "Local ZBar WASM",
-                success: false,
-                error: "No barcode detected by ZBar WASM"
+        }
+        debugInfo.receivedUid = uid;
+
+        // 2. Find user by UID
+        const user = await User.findOne({ uid });
+        if (!user) {
+            debugInfo.error = `No user found with UID: ${uid}`;
+            return res.status(404).json({
+                access: false,
+                message: "User not found",
+                debug: debugInfo
             });
-            console.log("Local ZBar WASM: No barcode detected");
         }
 
-      } catch (zbarError) {
-        // Log unexpected errors during ZBar processing
-        console.error("Local ZBar WASM Decode Error:", zbarError);
-        debugInfo.decodeAttempts.push({
-          method: "Local ZBar WASM",
-          success: false,
-          error: zbarError.message
+        // 3. Find and Validate an AVAILABLE Ticket for this User
+        const ticket = await Ticket.findOne({ 
+            userId: user._id.toString(), 
+            status: "available" 
         });
-      }
 
-      // Attempt 2: ZXing Web API (Fallback if ZBar failed)
-      if (!decodedUserId) {
-          try {
-            const formData = new FormData();
-            formData.append("file", processedImageBuffer, {
-              filename: "barcode.png", // Filename is required by some APIs
-              contentType: "image/png" // Set content type explicitly
+        if (!ticket) {
+            debugInfo.error = `No available ticket found for user UID: ${uid}`;
+            debugInfo.ticketStatus = "No Available Ticket Found";
+            return res.status(404).json({
+                access: false,
+                message: "No available ticket found for this user",
+                debug: debugInfo
             });
-
-            const zxingResponse = await axios.post("https://zxing.org/w/decode", formData, {
-              headers: formData.getHeaders(),
-              timeout: 7000 // Increased timeout
-            });
-
-            const responseText = zxingResponse.data;
-            let parsedText = null;
-
-            // Enhanced parsing for HTML response (patterns might need adjustment if zxing.org changes)
-            const patterns = [
-              /"rawText"\s*:\s*"([^"]+)"/,       // JSON rawText
-              /Parsed Result(?:<\/strong>)?\s*<pre>([^<]+)<\/pre>/, // HTML Parsed Result <pre>
-              /Raw text(?:<\/strong>)?\s*<pre>([^<]+)<\/pre>/,      // HTML Raw text <pre>
-              /Parsed Text:\s*<code>([^<]+)<\/code>/, // Older HTML format?
-              /Text:\s*<code>([^<]+)<\/code>/          // Another possible HTML format
-            ];
-
-            for (const pattern of patterns) {
-              const match = responseText.match(pattern);
-              if (match && match[1]) {
-                parsedText = match[1].trim();
-                break;
-              }
-            }
-
-            debugInfo.decodeAttempts.push({
-              method: "ZXing Web API",
-              success: !!parsedText,
-              result: parsedText,
-              // responseSample: responseText.substring(0, 300) // Log more for debugging if needed
-            });
-
-            if (parsedText) {
-                decodedUserId = parsedText;
-                debugInfo.decodedUserId = decodedUserId;
-            }
-          } catch (zxingError) {
-            debugInfo.decodeAttempts.push({
-              method: "ZXing Web API",
-              success: false,
-              error: zxingError.response ? `Status ${zxingError.response.status}` : zxingError.message
-            });
-             console.error("ZXing Web API Error:", zxingError.message);
-          }
-      }
-
-      // 4. Analyze Image if decoding failed after all attempts
-      if (!decodedUserId) {
-        try {
-          const metadata = await sharp(processedImageBuffer).metadata();
-          // Call corrected helper function
-          const sharpnessInfo = await estimateSharpness(processedImageBuffer);
-
-          debugInfo.imageAnalysis = {
-            ...debugInfo.imageAnalysis, // Keep original/processed size
-            dimensions: { width: metadata.width, height: metadata.height },
-            format: metadata.format,
-            hasAlpha: metadata.hasAlpha,
-            isGrayscale: metadata.space === "b-w", // Check color space
-            sharpness: sharpnessInfo // Include sharpness results
-          };
-        } catch (analysisError) {
-          console.error("Image analysis error:", analysisError);
-          if (debugInfo.imageAnalysis) {
-             debugInfo.imageAnalysis.error = analysisError.message;
-          } else {
-             debugInfo.imageAnalysis = { error: analysisError.message };
-          }
         }
 
-        debugInfo.error = "No valid barcode detected after all attempts (ZBar & ZXing Web API)";
-        return res.status(400).json({
-          access: false,
-          message: "No valid barcode detected in the image",
-          debug: debugInfo
+        debugInfo.ticketStatus = ticket.status; // Should be "available"
+
+        // 4. Ticket is valid and available - Mark as used
+        ticket.status = "used";
+        ticket.validatedAt = new Date();
+        await ticket.save();
+        debugInfo.ticketStatus = "Used"; // Update status after saving
+
+        // 5. Success Response
+        return res.status(200).json({
+            access: true,
+            message: "Ticket validated successfully",
+            ticket: {
+                userId: ticket.userId,
+                barcode: ticket.barcode,
+                status: ticket.status,
+                validatedAt: ticket.validatedAt
+            },
+            debug: debugInfo
         });
-      }
-
-      // 5. User ID Found - Now Find and Validate an AVAILABLE Ticket for this User
-      const ticket = await Ticket.findOne({ userId: decodedUserId, status: "available" });
-
-      if (!ticket) {
-          // Changed error message and debug info
-          debugInfo.error = `No available ticket found for user ID: ${decodedUserId}`;
-          debugInfo.ticketStatus = "No Available Ticket Found";
-          return res.status(404).json({
-              access: false,
-              message: "No available ticket found for the scanned user ID",
-              debug: debugInfo
-          });
-      }
-
-      debugInfo.ticketStatus = ticket.status; // Should be "available"
-
-      // 6. Ticket is valid and available - Mark as used
-      ticket.status = "used";
-      ticket.validatedAt = new Date();
-      await ticket.save();
-      debugInfo.ticketStatus = "Used"; // Update status after saving
-
-      // Socket.IO notification removed
-
-      // 7. Success Response
-      return res.status(200).json({
-          access: true,
-          message: "Ticket validated successfully via image upload",
-          ticket: { // Return relevant ticket info
-              userId: ticket.userId,
-              barcode: ticket.barcode, // The specific barcode of the ticket that was used
-              status: ticket.status,
-              validatedAt: ticket.validatedAt
-          },
-          debug: debugInfo // Include debug info even on success if helpful
-      });
 
     } catch (err) {
-      // Catch all unexpected errors
-      console.error("Unexpected error in verifyTicket:", err);
-      debugInfo.error = `Internal Server Error: ${err.message}`;
-      return res.status(500).json({
-        access: false,
-        message: "Internal server error during ticket verification",
-        debug: debugInfo // Provide debug info for server errors too
-      });
+        console.error("Unexpected error in verifyTicket:", err);
+        debugInfo.error = `Internal Server Error: ${err.message}`;
+        return res.status(500).json({
+            access: false,
+            message: "Internal server error during ticket verification",
+            debug: debugInfo
+        });
     }
-  }
-];
-
-// Add a check for model path if possible, or ensure it"s correct in the project structure
-try {
-  // This is just a placeholder check; actual model loading happens in the functions
-  if (typeof Ticket === "undefined") {
-    console.warn("Ticket model might not be loaded correctly. Check path \"../models/Ticket\"");
-  }
-} catch (e) {
-  console.error("Error checking Ticket model:", e);
-}
-
+};

@@ -9,6 +9,11 @@ const userSchema = new mongoose.Schema(
             required: true,
         
         },
+           uid: {
+            type: String,
+            required: true,
+        
+        },
         cin: {
             type: String,
             required: true,
