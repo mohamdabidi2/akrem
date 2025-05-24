@@ -8,7 +8,7 @@ const bcrypt = require("bcryptjs");
 // @access  Public
 const registerUser = async (req, res) => {
     try {
-        const { username, cin, password, role } = req.body;
+        const { username, cin, password, role,uid } = req.body;
 
         // Check if user already exists
         const userExists = await User.findOne({ cin });
@@ -26,6 +26,7 @@ const registerUser = async (req, res) => {
             cin,
             password: hashedPassword,
             role,
+            uid
         });
 
         if (user) {
