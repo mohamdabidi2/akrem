@@ -275,3 +275,29 @@ exports.verifyTicket = async (req, res) => {
         });
     }
 };
+// Add this to ticketController.js
+exports.getTodayScannedTickets = async (req, res) => {
+    try {
+        // Get start of today
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        
+        // Get end of today
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Count tickets validated today
+        const count = await Ticket.countDocuments({
+            status: "used",
+            validatedAt: {
+                $gte: startOfDay,
+                $lte: endOfDay
+            }
+        });
+
+        res.status(200).json({ count });
+    } catch (err) {
+        console.error("Error getting today's scanned tickets:", err);
+        res.status(500).json({ message: "Server error while fetching today's tickets" });
+    }
+};
